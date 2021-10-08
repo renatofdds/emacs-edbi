@@ -904,6 +904,8 @@ The programmer should be aware of the internal state so as not to break the stat
 
 (defvar edbi:ds-history-list nil "[internal] data source history.")
 
+(declare-function cl-remove-if "cl-seq")
+
 (defun edbi:ds-history-add (ds)
   "[internal] Add the given data source into `edbi:ds-history-list'. This function truncates the list, if the length of the list is more than `edbi:ds-history-list-num'."
   (let ((dsc (edbi:data-source
@@ -1111,6 +1113,8 @@ This function kills the old buffer if it exists."
              (format "Connection Error : %s" msg))
           (edbi:dialog-ds-kill-buffer)))))))
 
+(defvar edbi:dialog-before-win-num 0  "[internal] ")
+
 (defun edbi:dialog-ds-kill-buffer ()
   "[internal] Kill dialog buffer."
   (interactive)
@@ -1120,8 +1124,6 @@ This function kills the old buffer if it exists."
                (> win-num edbi:dialog-before-win-num))
       (delete-window))
     (kill-buffer cbuf)))
-
-(defvar edbi:dialog-before-win-num 0  "[internal] ")
 
 (defun edbi:dialog-replace-buffer-window (prev-buf data-source on-ok-func
                                                    &optional password-show error-msg)
@@ -1264,6 +1266,8 @@ This function kills the old buffer if it exists."
          (ctbl:cp-set-selected-cell cp (ctbl:cursor-to-nearest-cell))
          (let ((table (car (last (ctbl:cp-get-selected-data-row cp)))))
            ,@body)))))
+
+(defvar edbi:dbview-table-buffer-name "*edbi-dbviewer-table*" "[internal] Table buffer name.")
 
 (defun edbi:dbview-quit-command ()
   (interactive)
@@ -1711,8 +1715,6 @@ If the region is active in the query buffer, the selected string is executed."
 
 
 ;; table definition viewer
-
-(defvar edbi:dbview-table-buffer-name "*edbi-dbviewer-table*" "[internal] Table buffer name.")
 
 (defvar edbi:dbview-table-keymap
   (epc:add-keymap
