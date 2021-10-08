@@ -1,4 +1,4 @@
-;;; edbi.el --- Database independent interface for Emacs
+;;; edbi.el --- Database independent interface for Emacs   -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2011, 2012, 2013  SAKURAI Masashi
 
@@ -83,7 +83,7 @@
 ;;; Code:
 
 
-(eval-when-compile (require 'cl)
+(eval-when-compile (require 'cl-lib)
                    (require 'auto-complete nil t))
 (require 'epc)
 (require 'sql)
@@ -127,20 +127,20 @@
               `(deferred:nextc ,f
                  (lambda (,vsym) (setq ,var ,vsym)))))
            (t first-d)))
-         (ds (loop for i in elements
-                   collect
-                   (cond
-                    ((eq 'lambda (car i))
-                     `(deferred:nextc ,pit ,i))
-                    ((eq '<- (nth 1 i))
-                     (let ((var (car i)) (f (nth 2 i)))
-                     `(deferred:nextc ,pit
-                        (lambda (x)
-                          (deferred:$ ,f
-                            (deferred:nextc ,pit
-                              (lambda (,vsym) (setq ,var ,vsym))))))))
-                    (t
-                     `(deferred:nextc ,pit (lambda (x) ,i)))))))
+         (ds (cl-loop for i in elements
+                      collect
+                      (cond
+                       ((eq 'lambda (car i))
+                        `(deferred:nextc ,pit ,i))
+                       ((eq '<- (nth 1 i))
+                        (let ((var (car i)) (f (nth 2 i)))
+                          `(deferred:nextc ,pit
+                             (lambda (x)
+                               (deferred:$ ,f
+                                 (deferred:nextc ,pit
+                                   (lambda (,vsym) (setq ,var ,vsym))))))))
+                       (t
+                        `(deferred:nextc ,pit (lambda (x) ,i)))))))
     `(deferred:$ ,fs ,@ds)))
 
 (defmacro edbi:liftd (f deferred)
@@ -155,14 +155,14 @@
 
 (defun edbi:column-selector (columns name)
   "[internal] Return a column selector function."
-  (lexical-let (num)
+  (let (num)
     (or
-     (loop for c in columns
-           for i from 0
-           if (equal c name)
-           return (progn
-                    (setq num i)
-                    (lambda (xs) (nth num xs))))
+     (cl-loop for c in columns
+              for i from 0
+              if (equal c name)
+              return (progn
+                       (setq num i)
+                       (lambda (xs) (nth num xs))))
      (lambda (xs) nil))))
 
 
@@ -187,7 +187,7 @@
   "Return the auth slot of the DATA-SOURCE."
   (nth 2 data-source))
 
-(defstruct edbi:ac-candidates tables columns types keywords)
+(cl-defstruct edbi:ac-candidates tables columns types keywords)
 
 (defun edbi:connection (epc-mngr)
   "Create an `edbi:connection' object."
@@ -211,9 +211,9 @@
   "Return the buffer list of query editors."
   (let ((buf-list (nth 2 conn)))
     (setq buf-list
-          (loop for i in buf-list
-                if (buffer-live-p i)
-                collect i))
+          (cl-loop for i in buf-list
+                   if (buffer-live-p i)
+                   collect i))
     (setf (nth 2 conn) buf-list)
     buf-list))
 
@@ -365,8 +365,9 @@ The programmer should be aware of the internal state so as not to break the stat
 ;;
 ;; TODO: collectiong indexes
 
-(defstruct edbi:dbd name table-info-args table-info-filter
-  column-info-args column-info-filter type-info-filter limit-format keywords)
+(cl-defstruct edbi:dbd name table-info-args table-info-filter
+              column-info-args column-info-filter type-info-filter
+              limit-format keywords)
 
 (defvar edbi:dbd-alist nil "[internal] List of the dbd name and `edbi:dbd' object.")
 (defvar edbi:dbd-default nil "[internal] Default `edbi:dbd' object.")
@@ -375,8 +376,8 @@ The programmer should be aware of the internal state so as not to break the stat
   "Register the `edbi:dbd' object to `edbi:dbd-alist'."
   (let ((name (edbi:dbd-name dbd)))
     (setq edbi:dbd-alist
-          (loop for i in edbi:dbd-alist
-                unless (equal (car i) name) collect i))
+          (cl-loop for i in edbi:dbd-alist
+                   unless (equal (car i) name) collect i))
     (push (cons name dbd) edbi:dbd-alist))
   edbi:dbd-alist)
 
@@ -395,7 +396,7 @@ The programmer should be aware of the internal state so as not to break the stat
   "[internal] Extract TABLE-INFO as follows:
 
   ((CATALOG SCHEMA TABLE TYPE REMARKS) ...)"
-  (loop
+  (cl-loop
    with hrow = (and table-info (car table-info))
    with rows = (and table-info (cadr table-info))
    with catalog-f = (edbi:column-selector hrow "TABLE_CAT")
@@ -414,17 +415,17 @@ The programmer should be aware of the internal state so as not to break the stat
 
 (defun edbi:dbd-default-table-info-filter (table-info)
   "[internal] Default table name filter."
-  (loop for rec in (edbi:dbd-extract-table-info table-info)
-        for (catalog schema table type remarks) = rec
-        if (not (or (string-match "\\(INDEX\\|SYSTEM\\)" type)
-                    (string-match "\\(information_schema\\|SYSTEM\\)" schema)))
-        collect rec))
+  (cl-loop for rec in (edbi:dbd-extract-table-info table-info)
+           for (catalog schema table type remarks) = rec
+           if (not (or (string-match "\\(INDEX\\|SYSTEM\\)" type)
+                       (string-match "\\(information_schema\\|SYSTEM\\)" schema)))
+           collect rec))
 
 (defun edbi:dbd-extract-column-info (column-info)
   "[internal] Extract COLUMN-INFO as follows:
 
   ((TABLE-NAME COLUMN-NAME TYPE-NAME COLUMN-SIZE NULLABLE REMARKS)...)"
-  (loop
+  (cl-loop
    with hrow = (and column-info (car column-info))
    with rows = (and column-info (cadr column-info))
    with table-name-f  = (edbi:column-selector hrow "TABLE_NAME")
@@ -452,14 +453,14 @@ The programmer should be aware of the internal state so as not to break the stat
   (let (ret)
     (when type-info
       (let ((name-col
-             (loop for (n . i) in (car type-info)
-                   if (equal n "TYPE_NAME") return i)))
+             (cl-loop for (n . i) in (car type-info)
+                      if (equal n "TYPE_NAME") return i)))
         (when name-col
           (setq ret
-                (loop for type-row in (cdr type-info)
-                      for name = (nth name-col type-row)
-                      collect
-                      (cons (propertize name 'summary "TYPE") name))))))
+                (cl-loop for type-row in (cdr type-info)
+                         for name = (nth name-col type-row)
+                         collect
+                         (cons (propertize name 'summary "TYPE") name))))))
     (unless ret
       ;; fallback : enumerate well known types
       (setq ret (list "INT" "INTEGER" "TINYINT" "SMALLINT" "MEDIUMINT"
@@ -545,12 +546,12 @@ The programmer should be aware of the internal state so as not to break the stat
                        "SELECT * FROM %table% LIMIT %limit%"
                        :keywords
                        'edbi:dbd-default-keywords))
-  (loop for i in (list edbi:dbd-default
-                       (edbi:dbd-init-postgresql)
-                       (edbi:dbd-init-mysql)
-                       (edbi:dbd-init-oracle))
-        do
-        (edbi:dbd-register i))
+  (cl-loop for i in (list edbi:dbd-default
+                          (edbi:dbd-init-postgresql)
+                          (edbi:dbd-init-mysql)
+                          (edbi:dbd-init-oracle))
+           do
+           (edbi:dbd-register i))
   ;; add word-collection hook here for completion-at-point-functions
   (add-hook 'edbi:dbview-update-hook 'edbi:ac-editor-word-candidate-update))
 
@@ -738,11 +739,11 @@ The programmer should be aware of the internal state so as not to break the stat
 
 (defun edbi:dbd-oracle-table-info-filter (table-info)
   "[internal] Default table name filter."
-  (loop for rec in (edbi:dbd-extract-table-info table-info)
-        for (catalog schema table type remarks) = rec
-        if (and (string-match "^\\(TABLE\\|VIEW\\)$" type)
-                (not (string-match "^\\(.*SYS\\|SYSTEM\\|PUBLIC\\|APEX_.+\\|XDB\\|ORDDATA\\)$" schema)))
-        collect rec))
+  (cl-loop for rec in (edbi:dbd-extract-table-info table-info)
+           for (catalog schema table type remarks) = rec
+           if (and (string-match "^\\(TABLE\\|VIEW\\)$" type)
+                   (not (string-match "^\\(.*SYS\\|SYSTEM\\|PUBLIC\\|APEX_.+\\|XDB\\|ORDDATA\\)$" schema)))
+           collect rec))
 
 (defun edbi:dbd-init-oracle-keywords ()
   "[internal] "
@@ -909,16 +910,16 @@ The programmer should be aware of the internal state so as not to break the stat
               (edbi:data-source-uri ds)
               (edbi:data-source-username ds) "")))
     (setq edbi:ds-history-list
-          (remove-if (lambda (i)
-                       (equal (edbi:data-source-uri i)
-                              (edbi:data-source-uri dsc)))
-                     edbi:ds-history-list))
+          (cl-remove-if (lambda (i)
+                          (equal (edbi:data-source-uri i)
+                                 (edbi:data-source-uri dsc)))
+                        edbi:ds-history-list))
     (push dsc edbi:ds-history-list)
     (setq edbi:ds-history-list
-          (loop for i in edbi:ds-history-list
-                for idx from 0 below (min (length edbi:ds-history-list)
-                                          edbi:ds-history-list-num)
-                collect i))
+          (cl-loop for i in edbi:ds-history-list
+                   for idx from 0 below (min (length edbi:ds-history-list)
+                                             edbi:ds-history-list-num)
+                   collect i))
     (edbi:ds-history-save)))
 
 (defun edbi:ds-history-save ()
@@ -945,11 +946,11 @@ The programmer should be aware of the internal state so as not to break the stat
     (when (file-exists-p file)
       (let ((buf (find-file-noselect file)) ret)
         (unwind-protect
-			(with-current-buffer buf
+	    (with-current-buffer buf
               (goto-char (point-min))
-              (setq ret (loop for i in (read buf)
-                              collect
-                              (edbi:data-source (car i) (nth 1 i) ""))))
+              (setq ret (cl-loop for i in (read buf)
+                                 collect
+                                 (edbi:data-source (car i) (nth 1 i) ""))))
           (kill-buffer buf))
         (setq edbi:ds-history-list ret)))))
 
@@ -982,9 +983,8 @@ This function kills the old buffer if it exists."
            (put-text-property 0 (length text) 'face 'font-lock-warning-face text)
            text))
         (widget-insert "\n\n"))
-      (lexical-let
-          ((data-source data-source) (on-ok-func on-ok-func) (error-msg error-msg)
-           fdata-source fusername fauth cbshow menu-history fields)
+      (let ((data-source data-source) (on-ok-func on-ok-func) (error-msg error-msg)
+            fdata-source fusername fauth cbshow menu-history fields)
         ;; create dialog fields
         (setq fdata-source
               (widget-create
@@ -1022,11 +1022,11 @@ This function kills the old buffer if it exists."
                :value data-source
                :args
                (cons '(item :tag "(not selected)" :value (nil nil nil))
-                     (loop for i in edbi:ds-history-list
-                           collect
-                           (list 'item ':tag
-                                 (format "[%s]" (edbi:data-source-uri i))
-                                 ':value i)))))
+                     (cl-loop for i in edbi:ds-history-list
+                              collect
+                              (list 'item ':tag
+                                    (format "[%s]" (edbi:data-source-uri i))
+                                    ':value i)))))
 
         ;; OK / Cancel
         (widget-insert "\n")
@@ -1060,10 +1060,10 @@ This function kills the old buffer if it exists."
         (widget-put menu-history
                     :notify
                     (lambda (widget &rest ignore)
-                        (edbi:dialog-replace-buffer-window
-                         (current-buffer)
-                         (widget-value widget) on-ok-func (widget-value cbshow))
-                        (widget-forward 4)))
+                      (edbi:dialog-replace-buffer-window
+                       (current-buffer)
+                       (widget-value widget) on-ok-func (widget-value cbshow))
+                      (widget-forward 4)))
 
         ;; setup widgets
         (use-local-map widget-keymap)
@@ -1197,7 +1197,7 @@ This function kills the old buffer if it exists."
 
 (defun edbi:dbview-open (conn)
   "[internal] Start EPC conversation with the DB to open the DB Viewer buffer."
-  (lexical-let ((db-buf (edbi:get-new-buffer edbi:dbview-buffer-name)))
+  (let ((db-buf (edbi:get-new-buffer edbi:dbview-buffer-name)))
     (with-current-buffer db-buf
       (let (buffer-read-only)
         (erase-buffer)
@@ -1207,7 +1207,7 @@ This function kills the old buffer if it exists."
                 "\n[connecting...]")))
     (unless (eq (current-buffer) db-buf)
       (pop-to-buffer db-buf))
-    (lexical-let ((conn conn) (dbd (edbi:dbd-get conn)) table-info)
+    (let ((conn conn) (dbd (edbi:dbd-get conn)) table-info)
       (deferred:error
         (edbi:seq
          (table-info <- (apply 'edbi:table-info-d conn
@@ -1225,11 +1225,11 @@ This function kills the old buffer if it exists."
 (defun edbi:dbview-create-buffer (conn dbd table-info)
   "[internal] Render the DB Viewer buffer with the table-info."
   (let* ((buf (get-buffer-create edbi:dbview-buffer-name))
-         (data (loop for (catalog schema table type remarks) in
-                     (funcall (edbi:dbd-table-info-filter dbd) table-info)
-                     collect
-                     (list (concat catalog schema) table type (or remarks "")
-                           (list catalog schema table)))) table-cp)
+         (data (cl-loop for (catalog schema table type remarks) in
+                        (funcall (edbi:dbd-table-info-filter dbd) table-info)
+                        collect
+                        (list (concat catalog schema) table type (or remarks "")
+                              (list catalog schema table)))) table-cp)
     (with-current-buffer buf
       (let (buffer-read-only)
         (erase-buffer)
@@ -1277,12 +1277,12 @@ This function kills the old buffer if it exists."
              (kill-buffer table-buf)))
          ;; kill editor and result buffers
          (ignore-errors
-           (loop for b in (edbi:connection-buffers conn)
-                 if (and b (buffer-live-p b))
-                 do
-                 (let ((rbuf (buffer-local-value 'edbi:result-buffer b)))
-                   (when (and rbuf (kill-buffer rbuf))))
-                 (kill-buffer b))))
+           (cl-loop for b in (edbi:connection-buffers conn)
+                    if (and b (buffer-live-p b))
+                    do
+                    (let ((rbuf (buffer-local-value 'edbi:result-buffer b)))
+                      (when (and rbuf (kill-buffer rbuf))))
+                    (kill-buffer b))))
        ;; kill db view buffer
        (kill-buffer (current-buffer))))))
 
@@ -1297,7 +1297,7 @@ This function kills the old buffer if it exists."
   (let ((conn edbi:connection))
     (when conn
       (edbi:dbview-with-cp
-       (destructuring-bind (catalog schema table) table
+       (cl-destructuring-bind (catalog schema table) table
          (edbi:dbview-tabledef-open conn catalog schema table))))))
 
 (defun edbi:dbview-query-editor-command ()
@@ -1329,7 +1329,7 @@ This function kills the old buffer if it exists."
   (let ((conn edbi:connection))
     (when conn
       (edbi:dbview-with-cp
-       (destructuring-bind (catalog schema table-name) table
+       (cl-destructuring-bind (catalog schema table-name) table
          (edbi:dbview-query-editor-open
           conn
           :init-sql (edbi:dbview-show-data-sql conn table-name)
@@ -1386,7 +1386,7 @@ This function kills the old buffer if it exists."
 
 (defun edbi:dbview-uid ()
   "[internal] UID counter."
-  (incf edbi:dbview-uid))
+  (cl-incf edbi:dbview-uid))
 
 
 (defvar edbi:query-editor-history-max-num 50 "[internal] Maximum number of the query histories.")
@@ -1426,9 +1426,9 @@ This function kills the old buffer if it exists."
 that the current buffer is the query editor buffer."
   (push sql edbi:query-editor-history-list)
   (setq edbi:query-editor-history-list
-        (loop for i in edbi:query-editor-history-list
-              for idx from 0 below edbi:query-editor-history-max-num
-              collect i)))
+        (cl-loop for i in edbi:query-editor-history-list
+                 for idx from 0 below edbi:query-editor-history-max-num
+                 collect i)))
 
 (defun edbi:dbview-query-editor-history-reset-index ()
   "[internal] Reset the history counter `edbi:history-index'."
@@ -1456,7 +1456,7 @@ that the current buffer is the query editor buffer."
         (edbi:connection-buffers-set conn (cons buf buf-list))
         buf)))))
 
-(defun* edbi:dbview-query-editor-open (conn &key init-sql executep force-create-p)
+(cl-defun edbi:dbview-query-editor-open (conn &key init-sql executep force-create-p)
   "[internal] Open a query-editor buffer and display the buffer by the switch-to-buffer.
 INIT-SQL is a string which is inserted in the buffer.
 If EXECUTEP is non-nil, the INIT-SQL is executed after the displaying the buffer.
@@ -1531,8 +1531,8 @@ If the region is active in the query buffer, the selected string is executed."
 
 (defun edbi:dbview-query-execute (conn sql result-buf)
   "[internal] Execute SQL and rendering results."
-  (lexical-let ((conn conn) (time-begin (float-time))
-                (sql sql) (result-buf result-buf))
+  (let ((conn conn) (time-begin (float-time))
+        (sql sql) (result-buf result-buf))
     (cc:semaphore-with edbi:dbview-query-execute-semaphore
       (lambda (x)
         (message "EDBI: Waiting for the query...")
@@ -1548,7 +1548,7 @@ If the region is active in the query buffer, the selected string is executed."
               ((or (equal "0E0" exec-result)
                    (and exec-result (numberp exec-result))) ; some DBD returns rows number
                (edbi:dbview-query-editor-history-add sql)
-               (lexical-let (rows header (exec-result exec-result))
+               (let (rows header (exec-result exec-result))
                  (edbi:seq
                   (header <- (edbi:fetch-columns-d conn))
                   (rows <- (edbi:fetch-d conn edbi:dbview-query-result-fetch-num))
@@ -1560,7 +1560,7 @@ If the region is active in the query buffer, the selected string is executed."
                         (progn
                           (message "No rows returned.")
                           (kill-buffer result-buf))))
-                     (t    ; update results?
+                     (t                 ; update results?
                       (edbi:dbview-query-result-text conn result-buf exec-result)))))))
               ;; ERROR
               ((null exec-result)
@@ -1616,17 +1616,17 @@ If the region is active in the query buffer, the selected string is executed."
 
 (defun edbi:dbview-query-result-open (conn buf header rows)
   "[internal] Display SELECT results."
-  (lexical-let ((conn conn) (rows rows))
+  (let ((conn conn) (rows rows))
     (let (table-cp async-model
-          (limit edbi:dbview-query-result-fetch-num)
-          (param (copy-ctbl:param ctbl:default-rendering-param)))
+                   (limit edbi:dbview-query-result-fetch-num)
+                   (param (copy-ctbl:param ctbl:default-rendering-param)))
       (setf (ctbl:param-fixed-header param) edbi:query-result-fix-header)
       (setq async-model
             (if (< (length rows) limit) rows
               (make-ctbl:async-model
                :request
                (lambda (row-num len resf errf)
-                 (lexical-let ((len len) (resf resf) (errf errf))
+                 (let ((len len) (resf resf) (errf errf))
                    (cond
                     (rows (funcall resf rows)
                           (setq rows nil))
@@ -1647,10 +1647,10 @@ If the region is active in the query buffer, the selected string is executed."
              :model
              (make-ctbl:model
               :column-model
-              (loop for i in header
-                    collect (make-ctbl:cmodel
-                             :title (format "%s" i) :align 'left
-                             :min-width 5 :max-width edbi:query-result-column-max-width))
+              (cl-loop for i in header
+                       collect (make-ctbl:cmodel
+                                :title (format "%s" i) :align 'left
+                                :min-width 5 :max-width edbi:query-result-column-max-width))
               :data async-model
               :sort-state nil)
              :custom-map edbi:dbview-query-result-keymap))
@@ -1746,9 +1746,9 @@ If the region is active in the query buffer, the selected string is executed."
               "[connecting...]\n")))
   (unless (equal (buffer-name) edbi:dbview-table-buffer-name)
     (pop-to-buffer edbi:dbview-table-buffer-name))
-  (lexical-let ((conn conn)
-                (catalog catalog) (schema schema) (table table)
-                column-info pkey-info index-info)
+  (let ((conn conn)
+        (catalog catalog) (schema schema) (table table)
+        column-info pkey-info index-info)
     (edbi:seq
      (column-info <- (edbi:column-info-d conn catalog schema table nil))
      (pkey-info   <- (edbi:primary-key-info-d conn catalog schema table))
@@ -1759,18 +1759,18 @@ If the region is active in the query buffer, the selected string is executed."
 
 (defun edbi:dbview-tabledef-get-pkey-info (pkey-info column-name)
   "[internal] "
-  (loop with pkey-hrow = (car pkey-info)
-        with pkey-rows = (cadr pkey-info)
-        with pkname-f = (edbi:column-selector pkey-hrow "PK_NAME")
-        with keyseq-f = (edbi:column-selector pkey-hrow "KEY_SEQ")
-        with cname-f = (edbi:column-selector pkey-hrow "COLUMN_NAME")
-        for row in pkey-rows
-        for cname = (funcall cname-f row)
-        if (equal column-name cname)
-        return (format "%s %s"
-                       (funcall pkname-f row)
-                       (funcall keyseq-f row))
-        finally return ""))
+  (cl-loop with pkey-hrow = (car pkey-info)
+           with pkey-rows = (cadr pkey-info)
+           with pkname-f = (edbi:column-selector pkey-hrow "PK_NAME")
+           with keyseq-f = (edbi:column-selector pkey-hrow "KEY_SEQ")
+           with cname-f = (edbi:column-selector pkey-hrow "COLUMN_NAME")
+           for row in pkey-rows
+           for cname = (funcall cname-f row)
+           if (equal column-name cname)
+           return (format "%s %s"
+                          (funcall pkname-f row)
+                          (funcall keyseq-f row))
+           finally return ""))
 
 (defun edbi:dbview-tabledef-create-buffer (conn table-name column-info pkey-info index-info)
   "[internal] "
@@ -1778,23 +1778,23 @@ If the region is active in the query buffer, the selected string is executed."
          (hrow (and column-info (car column-info)))
          (rows (and column-info (cadr column-info)))
          (data
-          (loop with column-name-f = (edbi:column-selector hrow "COLUMN_NAME")
-                with type-name-f   = (edbi:column-selector hrow "TYPE_NAME")
-                with column-size-f = (edbi:column-selector hrow "COLUMN_SIZE")
-                with nullable-f    = (edbi:column-selector hrow "NULLABLE")
-                with remarks-f     = (edbi:column-selector hrow "REMARKS")
-                for row in rows
-                for column-name = (funcall column-name-f row)
-                for type-name   = (funcall type-name-f row)
-                for column-size = (funcall column-size-f row)
-                for nullable    = (funcall nullable-f row)
-                for remarks     = (funcall remarks-f row)
-                collect
-                (list column-name type-name
-                      (or column-size "")
-                      (edbi:dbview-tabledef-get-pkey-info pkey-info column-name)
-                      (if (equal nullable 0) "NOT NULL" "") (or remarks "")
-                      row))) table-cp)
+          (cl-loop with column-name-f = (edbi:column-selector hrow "COLUMN_NAME")
+                   with type-name-f   = (edbi:column-selector hrow "TYPE_NAME")
+                   with column-size-f = (edbi:column-selector hrow "COLUMN_SIZE")
+                   with nullable-f    = (edbi:column-selector hrow "NULLABLE")
+                   with remarks-f     = (edbi:column-selector hrow "REMARKS")
+                   for row in rows
+                   for column-name = (funcall column-name-f row)
+                   for type-name   = (funcall type-name-f row)
+                   for column-size = (funcall column-size-f row)
+                   for nullable    = (funcall nullable-f row)
+                   for remarks     = (funcall remarks-f row)
+                   collect
+                   (list column-name type-name
+                         (or column-size "")
+                         (edbi:dbview-tabledef-get-pkey-info pkey-info column-name)
+                         (if (equal nullable 0) "NOT NULL" "") (or remarks "")
+                         row))) table-cp)
     (with-current-buffer buf
       (let (buffer-read-only)
         (erase-buffer)
@@ -1822,8 +1822,8 @@ If the region is active in the query buffer, the selected string is executed."
             (insert "\n"
                     (propertize (format "[Index: %s]\n" (length index-rows))
                                 'face 'edbi:face-header))
-            (loop for row in index-rows ; maybe index column (sqlite)
-                  do (insert (format "- %s\n" (nth 5 row))))))
+            (cl-loop for row in index-rows ; maybe index column (sqlite)
+                     do (insert (format "- %s\n" (nth 5 row))))))
 
         (goto-char (point-min))
         (ctbl:cp-set-selected-cell table-cp '(0 . 0)))
@@ -1834,7 +1834,7 @@ If the region is active in the query buffer, the selected string is executed."
   (interactive)
   (let ((args edbi:tabledef))
     (when args
-      (destructuring-bind (conn catalog schema table-name) args
+      (cl-destructuring-bind (conn catalog schema table-name) args
         (edbi:dbview-query-editor-open
          conn
          :init-sql (edbi:dbview-show-data-sql conn table-name)
@@ -1844,14 +1844,14 @@ If the region is active in the query buffer, the selected string is executed."
   (interactive)
   (let ((args edbi:tabledef))
     (when args
-      (destructuring-bind (conn catalog schema table-name) args
+      (cl-destructuring-bind (conn catalog schema table-name) args
         (edbi:dbview-query-editor-open conn)))))
 
 (defun edbi:dbview-tabledef-query-editor-new-command ()
   (interactive)
   (let ((args edbi:tabledef))
     (when args
-      (destructuring-bind (conn catalog schema table-name) args
+      (cl-destructuring-bind (conn catalog schema table-name) args
         (edbi:dbview-query-editor-open conn :force-create-p t)))))
 
 (defun edbi:dbview-tabledef-quit-command ()
@@ -1937,7 +1937,7 @@ If the region is active in the query buffer, the selected string is executed."
 
 (defun edbi:completion-at-point-function ()
   "Abnormal hook function for `completion-at-point-functions'."
-  (lexical-let* ((end (point))
+  (let* ((end (point))
          (beg (save-excursion
                 (skip-chars-backward "^ \n\r\t,:")
                 (point))))
@@ -1989,8 +1989,8 @@ If the region is active in the query buffer, the selected string is executed."
 (defun edbi:ac-editor-word-candidate-update (conn)
   "[internal] Start word collection for database information."
   (unless edbi:ac-editor-word-candidate-update-state
-    (lexical-let ((conn conn) (dbd (edbi:dbd-get conn)) tables
-                  (acs (make-edbi:ac-candidates)))
+    (let ((conn conn) (dbd (edbi:dbd-get conn)) tables
+          (acs (make-edbi:ac-candidates)))
       (message "DB Word collection is started.")
       (setq edbi:ac-editor-word-candidate-update-state t)
       (deferred:try
@@ -2007,7 +2007,7 @@ If the region is active in the query buffer, the selected string is executed."
 
 (defun edbi:ac-editor-word-candidate-update-tables (conn dbd acs)
   "[internal] "
-  (lexical-let ((conn conn) (dbd dbd) (acs acs) table-info tables)
+  (let ((conn conn) (dbd dbd) (acs acs) table-info tables)
     (cc:semaphore-with edbi:dbview-query-execute-semaphore
       (lambda ()
         (edbi:seq
@@ -2021,57 +2021,57 @@ If the region is active in the query buffer, the selected string is executed."
   "[internal] "
   (let (tables)
     (setf (edbi:ac-candidates-tables acs)
-          (loop for (catalog schema table type remarks) in
-                (funcall (edbi:dbd-table-info-filter dbd) table-info)
-                collect
-                (progn
-                  (push table tables)
-                  (cons (propertize table 'summary type
-                                    'document (format "%s\n%s" type remarks))
-                        table))))
+          (cl-loop for (catalog schema table type remarks) in
+                   (funcall (edbi:dbd-table-info-filter dbd) table-info)
+                   collect
+                   (progn
+                     (push table tables)
+                     (cons (propertize table 'summary type
+                                       'document (format "%s\n%s" type remarks))
+                           table))))
     tables))
 
 (defun edbi:ac-editor-word-candidate-update-columns (conn dbd acs tables)
   "[internal] "
-  (lexical-let ((conn conn) (dbd dbd) (acs acs)
-                column-header column-rows
-                (tables tables))
+  (let ((conn conn) (dbd dbd) (acs acs)
+        column-header column-rows
+        (tables tables))
     (deferred:$
-     (deferred:loop tables
-       (lambda (table)
-         (lexical-let ((table table))
-           (cc:semaphore-with edbi:dbview-query-execute-semaphore
-             (lambda (table)
-               ;;(message "COLUMN--: %s" table)
-               (deferred:nextc
-                 (apply 'edbi:column-info-d conn
-                        (funcall (edbi:dbd-column-info-args dbd) conn table))
-                 (lambda (ci)
-                   ;;(message "COLUMN-INFO: %S" ci)
-                   (unless column-header
-                     (setq column-header (car ci)))
-                   (setq column-rows
-                         (append (cadr ci) column-rows)))))))))
-     (deferred:nextc it
-       (lambda (x)
-         (let ((column-info (list column-header column-rows)))
-           ;;(message "COLUMN-INFO-ALL: %S" column-info)
-           (edbi:ac-editor-word-candidate-update-columns1 conn dbd acs column-info)))))))
+      (deferred:loop tables
+        (lambda (table)
+          (let ((table table))
+            (cc:semaphore-with edbi:dbview-query-execute-semaphore
+              (lambda (table)
+                ;;(message "COLUMN--: %s" table)
+                (deferred:nextc
+                  (apply 'edbi:column-info-d conn
+                         (funcall (edbi:dbd-column-info-args dbd) conn table))
+                  (lambda (ci)
+                    ;;(message "COLUMN-INFO: %S" ci)
+                    (unless column-header
+                      (setq column-header (car ci)))
+                    (setq column-rows
+                          (append (cadr ci) column-rows)))))))))
+      (deferred:nextc it
+        (lambda (x)
+          (let ((column-info (list column-header column-rows)))
+            ;;(message "COLUMN-INFO-ALL: %S" column-info)
+            (edbi:ac-editor-word-candidate-update-columns1 conn dbd acs column-info)))))))
 
 (defun edbi:ac-editor-word-candidate-update-columns1 (conn dbd acs column-info)
   "[internal] "
   (setf (edbi:ac-candidates-columns acs)
-         (loop for (table-name column-name type-name column-size nullable remarks) in
-               (funcall (edbi:dbd-column-info-filter dbd) column-info)
-               collect
-               (cons (propertize column-name 'summary table-name
-                                 'document (format "%s %s %s\n%s" type-name
-                                                   column-size nullable remarks))
-                     column-name))) nil)
+        (cl-loop for (table-name column-name type-name column-size nullable remarks) in
+                 (funcall (edbi:dbd-column-info-filter dbd) column-info)
+                 collect
+                 (cons (propertize column-name 'summary table-name
+                                   'document (format "%s %s %s\n%s" type-name
+                                                     column-size nullable remarks))
+                       column-name))) nil)
 
 (defun edbi:ac-editor-word-candidate-update-types (conn dbd acs)
   "[internal] "
-  (lexical-let ((conn conn) (dbd dbd) (acs acs) type-info)
+  (let ((conn conn) (dbd dbd) (acs acs) type-info)
     (cc:semaphore-with edbi:dbview-query-execute-semaphore
       (lambda ()
         (edbi:seq
@@ -2087,12 +2087,12 @@ If the region is active in the query buffer, the selected string is executed."
 
 (defun edbi:ac-editor-word-candidate-update-keywords (conn dbd acs)
   (setf (edbi:ac-candidates-keywords acs)
-        (loop for (name . words) in (funcall (edbi:dbd-keywords dbd)) append
-              (loop for word in words
-                    collect
-                    (cons (propertize word 'summary name
-                                      'document name)
-                          word)))) nil)
+        (cl-loop for (name . words) in (funcall (edbi:dbd-keywords dbd)) append
+                 (cl-loop for word in words
+                          collect
+                          (cons (propertize word 'summary name
+                                            'document name)
+                                word)))) nil)
 
 (eval-after-load 'auto-complete
   '(progn
