@@ -1149,6 +1149,8 @@ This function kills the old buffer if it exists."
 
 ;; database viewer
 
+(defvar data-source)
+
 ;;;###autoload
 (defun edbi:open-db-viewer ()
   "Open Database viewer buffer."
